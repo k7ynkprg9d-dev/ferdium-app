@@ -40,11 +40,13 @@ export const refreshZaloArchiveWindow = async (
   serviceId: string,
   repository: ZaloArchiveRepository,
 ) => {
-  const state = await archiveWindow.webContents
-    .executeJavaScript(
-      'window.__zaloArchiveState ? window.__zaloArchiveState() : ({})',
-    )
-    .catch(() => ({} as ArchiveWindowState));
+  const state = archiveWindow.webContents.getURL().startsWith('data:')
+    ? await archiveWindow.webContents
+        .executeJavaScript(
+          'window.__zaloArchiveState ? window.__zaloArchiveState() : ({})',
+        )
+        .catch(() => ({} as ArchiveWindowState))
+    : {};
   await repository.cleanupNoise(serviceId);
   const conversations = await repository.listConversations(serviceId);
   const entries = await Promise.all(

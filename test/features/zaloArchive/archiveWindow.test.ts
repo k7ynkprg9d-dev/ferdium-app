@@ -65,6 +65,7 @@ describe('Zalo archive window', () => {
     const archiveWindow = {
       loadURL: jest.fn<Promise<void>, [string]>(async () => undefined),
       webContents: {
+        getURL: jest.fn(() => 'data:text/html;charset=utf-8,archive'),
         executeJavaScript: jest.fn(async () => ({
           selected: 'lucy',
           query: 'lu',
@@ -89,5 +90,29 @@ describe('Zalo archive window', () => {
     expect(decodeURIComponent(loadedUrl)).toContain(
       '"selected":"lucy","query":"lu"',
     );
+  });
+
+  it('loads a new archive window without waiting on its blank page', async () => {
+    const archiveWindow = {
+      loadURL: jest.fn<Promise<void>, [string]>(async () => undefined),
+      webContents: {
+        getURL: jest.fn(() => 'about:blank'),
+        executeJavaScript: jest.fn(async () => ({})),
+      },
+    };
+    const repository = {
+      cleanupNoise: jest.fn(async () => undefined),
+      listConversations: jest.fn(async () => []),
+      getMessages: jest.fn(async () => []),
+    };
+
+    await refreshZaloArchiveWindow(
+      archiveWindow as never,
+      'zalo-new-window-test',
+      repository as never,
+    );
+
+    expect(archiveWindow.webContents.executeJavaScript).not.toHaveBeenCalled();
+    expect(archiveWindow.loadURL).toHaveBeenCalledTimes(1);
   });
 });
