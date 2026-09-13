@@ -141,7 +141,9 @@ export default class LocalCrmPanel extends Component<Props, State> {
 
   private backofficeRefresh: ReturnType<typeof setInterval> | undefined;
 
-  private profileSaveTimer: ReturnType<typeof setTimeout> | undefined;
+  private accountEditVersion = 0;
+
+  private accountWrites: Promise<unknown> = Promise.resolve();
 
   private contactSaveTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -173,7 +175,6 @@ export default class LocalCrmPanel extends Component<Props, State> {
     this.titleReaction?.();
     clearInterval(this.conversationPoll);
     clearInterval(this.backofficeRefresh);
-    clearTimeout(this.profileSaveTimer);
     clearTimeout(this.contactSaveTimer);
     this.lookupGuard.invalidate();
   }
@@ -240,11 +241,15 @@ export default class LocalCrmPanel extends Component<Props, State> {
   }
 
   async loadBackofficeProfile(conversationKey = this.state.conversationKey) {
+    const editVersion = this.accountEditVersion;
     const profile = (await ipcRenderer.invoke(
       'local-crm:get-backoffice-profile',
       { serviceId: this.props.service.id, conversationKey },
     )) as BackofficeProfile | null;
-    if (this.state.conversationKey !== conversationKey) return;
+    if (
+      this.state.conversationKey !== conversationKey ||
+      editVersion !== this.accountEditVersion
+    ) return;
     const defaults = defaultBackofficeAccounts(conversationKey);
     this.setState(
       {
@@ -310,43 +315,29 @@ export default class LocalCrmPanel extends Component<Props, State> {
   updateBackofficeAccount =
     (field: 'bsportAccount' | 'vsportAccount') =>
     (event: ChangeEvent<HTMLInputElement>) => {
+      const account = event.target.value;
+      const { serviceId, conversationKey } = this.state;
+      if (!conversationKey) return;
+      const stream = field === 'bsportAccount' ? 'BSPORT' : 'VSPORT';
+      this.accountEditVersion += 1;
       this.setState(
         {
-          [field]: event.target.value,
+          [field]: account,
           profileSaved: false,
         } as Pick<State, 'bsportAccount' | 'vsportAccount' | 'profileSaved'>,
         () => {
-          clearTimeout(this.profileSaveTimer);
-          const profile = {
-            serviceId: this.props.service.id,
-            conversationKey: this.state.conversationKey,
-            bsportAccount: this.state.bsportAccount,
-            vsportAccount: this.state.vsportAccount,
-            activeStream: this.state.activeStream,
-          };
-          this.profileSaveTimer = setTimeout(
-            () => void this.saveBackofficeProfile(profile),
-            800,
-          );
+          this.accountWrites = this.accountWrites.catch(() => undefined).then(async () => {
+            await ipcRenderer.invoke('local-crm:update-backoffice-account', {
+              serviceId, conversationKey, stream, account,
+            });
+            if (
+              this.state.conversationKey === conversationKey &&
+              this.state[field] === account
+            ) this.setState({ profileSaved: true });
+          });
         },
       );
     };
-
-  saveBackofficeProfile = async (
-    profileInput = {
-      serviceId: this.props.service.id,
-      conversationKey: this.state.conversationKey,
-      bsportAccount: this.state.bsportAccount,
-      vsportAccount: this.state.vsportAccount,
-      activeStream: this.state.activeStream,
-    },
-  ) => {
-    if (!profileInput.conversationKey) return;
-    const { conversationKey } = profileInput;
-    await ipcRenderer.invoke('local-crm:save-backoffice-profile', profileInput);
-    if (this.state.conversationKey !== conversationKey) return;
-    this.setState({ profileSaved: true });
-  };
 
   save = async () => {
     if (!this.state.conversationKey.trim()) return;
@@ -410,8 +401,7 @@ export default class LocalCrmPanel extends Component<Props, State> {
       });
       return;
     }
-    const { serviceId, conversationKey, bsportAccount, vsportAccount } =
-      this.state;
+    const { serviceId, conversationKey } = this.state;
     const lookup = this.lookupGuard.begin(
       serviceId,
       conversationKey,
@@ -420,12 +410,9 @@ export default class LocalCrmPanel extends Component<Props, State> {
     );
     try {
       this.setState({ loading: true, activeStream: stream, checkResult: null });
-      await ipcRenderer.invoke('local-crm:save-backoffice-profile', {
-        serviceId,
-        conversationKey,
-        bsportAccount,
-        vsportAccount,
-        activeStream: stream,
+      await this.accountWrites.catch(() => undefined);
+      await ipcRenderer.invoke('local-crm:update-backoffice-stream', {
+        serviceId, conversationKey, stream,
       });
       const result = (await ipcRenderer.invoke('local-crm:check-bufa', {
         stream,
@@ -556,7 +543,12 @@ export default class LocalCrmPanel extends Component<Props, State> {
     this.setState(
       { activeStream: stream, checkResult: null, loading: false },
       () => {
-        void this.saveBackofficeProfile();
+        if (this.state.conversationKey)
+          void ipcRenderer.invoke('local-crm:update-backoffice-stream', {
+            serviceId: this.props.service.id,
+            conversationKey: this.state.conversationKey,
+            stream,
+          });
         const account =
           stream === 'BSPORT'
             ? this.state.bsportAccount
@@ -688,7 +680,6 @@ export default class LocalCrmPanel extends Component<Props, State> {
               onChange={this.updateBackofficeAccount(
                 activeStream === 'BSPORT' ? 'bsportAccount' : 'vsportAccount',
               )}
-              onBlur={() => void this.saveBackofficeProfile()}
               onKeyDown={event => {
                 if (event.key === 'Enter') void this.check(activeStream);
               }}

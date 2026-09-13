@@ -181,6 +181,38 @@ export class ContactRepository {
     ))!;
   }
 
+  async updateBackofficeAccount(
+    serviceId: string,
+    conversationKey: string,
+    stream: 'BSPORT' | 'VSPORT',
+    account: string,
+  ): Promise<void> {
+    const column = stream === 'BSPORT' ? 'bsport_account' : 'vsport_account';
+    await this.run(
+      `INSERT INTO conversation_backoffice_profiles
+        (service_id, conversation_key, ${column}, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(service_id, conversation_key) DO UPDATE SET
+         ${column} = excluded.${column}, updated_at = excluded.updated_at`,
+      [serviceId, conversationKey.trim(), account.trim(), new Date().toISOString()],
+    );
+  }
+
+  async updateBackofficeStream(
+    serviceId: string,
+    conversationKey: string,
+    stream: 'BSPORT' | 'VSPORT',
+  ): Promise<void> {
+    await this.run(
+      `INSERT INTO conversation_backoffice_profiles
+        (service_id, conversation_key, active_stream, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(service_id, conversation_key) DO UPDATE SET
+         active_stream = excluded.active_stream, updated_at = excluded.updated_at`,
+      [serviceId, conversationKey.trim(), stream, new Date().toISOString()],
+    );
+  }
+
   async listBackofficeProfiles(): Promise<BackofficeProfile[]> {
     const rows = await this.all<{
       service_id: string;

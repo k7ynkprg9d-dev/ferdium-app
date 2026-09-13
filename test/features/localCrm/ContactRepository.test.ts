@@ -77,6 +77,19 @@ describe('ContactRepository', () => {
     await repository.close();
   });
 
+  it('does not erase a saved account when a stale profile save arrives', async () => {
+    const repository = await ContactRepository.openInMemory();
+    await repository.saveBackofficeProfile({
+      serviceId: 'zalo-sales', conversationKey: 'khách-a',
+      bsportAccount: 'saved-b', vsportAccount: 'saved-v', activeStream: 'BSPORT',
+    });
+    await repository.updateBackofficeAccount('zalo-sales', 'khách-a', 'BSPORT', 'new-b');
+    await repository.updateBackofficeStream('zalo-sales', 'khách-a', 'VSPORT');
+    await expect(repository.getBackofficeProfile('zalo-sales', 'khách-a'))
+      .resolves.toMatchObject({ bsportAccount: 'new-b', vsportAccount: 'saved-v' });
+    await repository.close();
+  });
+
   it('lists every saved backoffice profile for background monitoring', async () => {
     const repository = await ContactRepository.openInMemory();
     await repository.saveBackofficeProfile({

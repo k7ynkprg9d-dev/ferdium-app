@@ -43,6 +43,18 @@ export default function initializeLocalCrmIpc(): void {
       (await repository()).saveBackofficeProfile(data),
   );
   ipcMain.handle(
+    'local-crm:update-backoffice-account',
+    async (_event, { serviceId, conversationKey, stream, account }) =>
+      (await repository()).updateBackofficeAccount(
+        serviceId, conversationKey, stream, account,
+      ),
+  );
+  ipcMain.handle(
+    'local-crm:update-backoffice-stream',
+    async (_event, { serviceId, conversationKey, stream }) =>
+      (await repository()).updateBackofficeStream(serviceId, conversationKey, stream),
+  );
+  ipcMain.handle(
     'local-crm:check-bufa',
     async (_event, { stream, account, includeDepositHistory }) =>
       checkBufa(stream, account, Boolean(includeDepositHistory)),
